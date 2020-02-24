@@ -1,0 +1,4 @@
+github.com/google/uuid v1.1.1 h1:Gkbcsh/GbpXz7lPftLA3P6TYMwjCLYm83jiFQZF/3gY=
+github.com/google/uuid v1.1.1/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/pires/go-proxyproto v0.0.0-20200213100827-833e5d06d8f0 h1:iIf32tEZ9PiKn9rPH6kloHsKshbnv8rZ8NWPfJjXj7o=
+github.com/pires/go-proxyproto v0.0.0-20200213100827-833e5d06d8f0/go.mod h1:Odh9VFOZJCf9G8cLW5o435Xf1J95Jw9Gw5rnCjcwzAY=
