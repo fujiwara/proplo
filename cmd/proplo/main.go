@@ -13,7 +13,7 @@ import (
 
 func main() {
 	var (
-		ignore = flag.String("ignore", "", "ignore proxying network cidr")
+		ignore = flag.String("ignore-cidr", "", "ignore proxying network cidr")
 	)
 	flag.Parse()
 	opt := &proplo.Options{
