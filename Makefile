@@ -6,7 +6,7 @@ export GO111MODULE := on
 cmd/proplo/proplo: *.go cmd/proplo/*.go
 	cd cmd/proplo && go build -ldflags "-s -w -X main.Version=${GIT_VER}" -gcflags="-trimpath=${PWD}"
 
-install: cmd/proplo
+install: cmd/proplo/proplo
 	install cmd/proplo/proplo ${GOPATH}/bin
 
 test:
