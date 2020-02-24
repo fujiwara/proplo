@@ -16,6 +16,12 @@ func main() {
 		ignore = flag.String("ignore-cidr", "", "ignore proxying network cidr")
 	)
 	flag.Parse()
+
+	if len(flag.Args()) != 2 {
+		usage()
+		return
+	}
+
 	opt := &proplo.Options{
 		LocalAddr:    flag.Args()[0],
 		UpstreamAddr: flag.Args()[1],

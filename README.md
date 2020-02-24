@@ -39,6 +39,12 @@ GET / HTTP/1.0
 {"id":"e4640056-4811-4fce-9948-d00231cf5454","type":"transfer","time":"2020-02-25T00:52:44.836469+09:00","src_addr":"192.168.1.1:9999","proxy_addr":"10.8.0.6:61424","dest_addr":"10.8.0.1:80","bytes":18,"duration":27.835533649,"error":null}
 ```
 
+### Ignoring health check access
+
+When you ignore health check accesses from specified CIDR, set `-ignore-cidr` flag.
+
+`proplo -ignore-cidr 192.168.0.0/24` ignores logging and proxying to upstream connect from `192.168.0.0/24`.
+
 ## LICENSE
 
 MIT
