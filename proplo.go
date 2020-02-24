@@ -56,12 +56,15 @@ func (l LogProxy) Print() error {
 }
 
 // Run runs proplo
-func Run(ctx context.Context, localAddr, upstreamAddr string) error {
-	log.Println("[info] Upstream", upstreamAddr)
-	log.Println("[info] Listening", localAddr)
-	l, err := net.Listen("tcp", localAddr)
+func Run(ctx context.Context, opt *Options) error {
+	log.Println("[info] Upstream", opt.UpstreamAddr)
+	log.Println("[info] Listening", opt.LocalAddr)
+	if  opt.IgnoreCIDR != "" {
+		log.Println("[info] Ingore CIDR", opt.IgnoreCIDR)
+	}
+	l, err := net.Listen("tcp", opt.LocalAddr)
 	if err != nil {
-		log.Fatalf("couldn't listen to %q: %q\n", localAddr, err.Error())
+		log.Fatalf("couldn't listen to %q: %q\n", opt.LocalAddr, err.Error())
 	}
 
 	// Wrap listener in a proxyproto listener
@@ -75,24 +78,36 @@ func Run(ctx context.Context, localAddr, upstreamAddr string) error {
 			log.Println("[error]", err)
 			continue
 		}
-		go proxy(ctx, conn, upstreamAddr)
+		go proxy(ctx, conn, opt)
 	}
 }
 
-func proxy(ctx context.Context, clientConn net.Conn, upstreamAddr string) {
+func proxy(ctx context.Context, clientConn net.Conn, opt *Options) {
 	id := uuid.New()
 	start := time.Now()
 	defer clientConn.Close()
+
+	clientAddr := clientConn.RemoteAddr().String()
+	clientHost, _, err := net.SplitHostPort(clientAddr)
+	log.Println("[debug] clientAddr", clientAddr, "clientHost", clientHost)
+	if clientIP := net.ParseIP(clientHost); clientIP != nil {
+		log.Println("[debug] clientIP", clientIP)
+		if opt.Ignore(clientIP) {
+			log.Println("[debug] ignore client addr", clientConn.RemoteAddr().String())
+			return
+		}
+	}
+
 	logConnect := LogConnect{
 		ID:           id.String(),
 		ClientAt:     start,
 		ClientAddr:   clientConn.RemoteAddr().String(),
-		UpstreamAddr: upstreamAddr,
+		UpstreamAddr: opt.UpstreamAddr,
 	}
 	d := &net.Dialer{
 		Timeout: time.Second * 30,
 	}
-	upstreamConn, err := d.DialContext(ctx, "tcp", upstreamAddr)
+	upstreamConn, err := d.DialContext(ctx, "tcp", opt.UpstreamAddr)
 	if err != nil {
 		log.Println("[error] couldn't dial to upstream", err)
 		logConnect.Print("upstream_failed")

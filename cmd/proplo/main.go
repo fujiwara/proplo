@@ -2,19 +2,39 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/fujiwara/proplo"
+	"github.com/hashicorp/logutils"
 )
 
 func main() {
-	if len(os.Args) != 3 {
-		usage()
-		return
+	var (
+		ignore = flag.String("ignore", "", "ignore proxying network cidr")
+	)
+	flag.Parse()
+	opt := &proplo.Options{
+		LocalAddr:    flag.Args()[0],
+		UpstreamAddr: flag.Args()[1],
+		IgnoreCIDR:   *ignore,
 	}
-	err := proplo.Run(context.Background(), os.Args[1], os.Args[2])
+	opt.Validate()
+
+	logLevel := "info"
+	if level := os.Getenv("LOG_LEVEL"); level != "" {
+		logLevel = level
+	}
+	filter := &logutils.LevelFilter{
+		Levels:   []logutils.LogLevel{"debug", "info", "warn", "error"},
+		MinLevel: logutils.LogLevel(logLevel),
+		Writer:   os.Stderr,
+	}
+	log.SetOutput(filter)
+
+	err := proplo.Run(context.Background(), opt)
 	if err != nil {
 		log.Println("[error]", err)
 		os.Exit(1)
