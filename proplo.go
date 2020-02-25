@@ -14,52 +14,27 @@ import (
 	"github.com/pires/go-proxyproto"
 )
 
-var errNetClosing = "use of closed network connection"
-var encoder = json.NewEncoder(os.Stdout)
+var (
+	errNetClosing = "use of closed network connection"
+	encoder       = json.NewEncoder(os.Stdout)
+	clientStr     = "client"
+	upstreamStr   = "upstream"
+)
 
-// LogConnect represents log at connected
-type LogConnect struct {
-	ID           string    `json:"id"`
-	Type         string    `json:"type"`
-	Time         time.Time `json:"time"`
-	ClientAddr   string    `json:"client_addr"`
-	ProxyAddr    string    `json:"proxy_addr"`
-	UpstreamAddr string    `json:"upstream_addr"`
-	Status       string    `json:"status"`
-	ClientAt     time.Time `json:"client_at"`
-	UpstreamAt   time.Time `json:"upstream_at"`
-}
+var (
+	PrintStatusInterval = time.Minute
+	UpstreamTimeout     = 30 * time.Second
+)
 
-func (l LogConnect) Print(status string) error {
-	l.Type = "connect"
-	l.Status = status
-	l.Time = time.Now()
-	return encoder.Encode(l)
-}
-
-type LogProxy struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	Time      time.Time `json:"time"`
-	SrcAddr   string    `json:"src_addr"`
-	ProxyAddr string    `json:"proxy_addr"`
-	DestAddr  string    `json:"dest_addr"`
-	Bytes     int64     `json:"bytes"`
-	Duration  float64   `json:"duration"`
-	Error     error     `json:"error"`
-}
-
-func (l LogProxy) Print() error {
-	l.Type = "transfer"
-	l.Time = time.Now()
-	return encoder.Encode(l)
+var dashboard = &Dashboard{
+	LogStatuses: make(map[string]*LogStatus),
 }
 
 // Run runs proplo
 func Run(ctx context.Context, opt *Options) error {
 	log.Println("[info] Upstream", opt.UpstreamAddr)
 	log.Println("[info] Listening", opt.LocalAddr)
-	if  opt.IgnoreCIDR != "" {
+	if opt.IgnoreCIDR != "" {
 		log.Println("[info] Ingore CIDR", opt.IgnoreCIDR)
 	}
 	l, err := net.Listen("tcp", opt.LocalAddr)
@@ -70,6 +45,7 @@ func Run(ctx context.Context, opt *Options) error {
 	// Wrap listener in a proxyproto listener
 	proxyListener := &proxyproto.Listener{Listener: l}
 	defer proxyListener.Close()
+	go printStatus()
 
 	// Wait for a connection and accept it
 	for {
@@ -98,18 +74,19 @@ func proxy(ctx context.Context, clientConn net.Conn, opt *Options) {
 		}
 	}
 
-	logConnect := LogConnect{
+	logConnect := &LogConnect{
 		ID:           id.String(),
 		ClientAt:     start,
 		ClientAddr:   clientConn.RemoteAddr().String(),
 		UpstreamAddr: opt.UpstreamAddr,
 	}
 	d := &net.Dialer{
-		Timeout: time.Second * 30,
+		Timeout: UpstreamTimeout,
 	}
 	upstreamConn, err := d.DialContext(ctx, "tcp", opt.UpstreamAddr)
 	if err != nil {
 		log.Println("[error] couldn't dial to upstream", err)
+		logConnect.Error = err
 		logConnect.Print("upstream_failed")
 		return
 	}
@@ -119,6 +96,9 @@ func proxy(ctx context.Context, clientConn net.Conn, opt *Options) {
 	logConnect.UpstreamAt = time.Now()
 	logConnect.Print("connected")
 
+	dashboard.Post(logConnect)
+	defer dashboard.Remove(id.String())
+
 	clientCh := make(chan struct{})
 	upstreamCh := make(chan struct{})
 	go func() {
@@ -126,16 +106,18 @@ func proxy(ctx context.Context, clientConn net.Conn, opt *Options) {
 		if err != nil && strings.Contains(err.Error(), errNetClosing) {
 			err = nil
 		}
-		logProxy := LogProxy{
-			ID:        id.String(),
-			SrcAddr:   clientConn.RemoteAddr().String(),
-			ProxyAddr: upstreamConn.LocalAddr().String(),
-			DestAddr:  upstreamConn.RemoteAddr().String(),
-			Bytes:     n,
-			Duration:  time.Now().Sub(start).Seconds(),
-			Error:     err,
+		l := &LogDisconnect{
+			ID:           id.String(),
+			ClientAddr:   clientConn.RemoteAddr().String(),
+			ProxyAddr:    upstreamConn.LocalAddr().String(),
+			UpstreamAddr: upstreamConn.RemoteAddr().String(),
+			Bytes:        n,
+			Duration:     time.Now().Sub(start).Seconds(),
+			Error:        err,
+			Src:          clientStr,
+			Dest:         upstreamStr,
 		}
-		logProxy.Print()
+		l.Print()
 		clientCh <- struct{}{}
 	}()
 	go func() {
@@ -143,21 +125,31 @@ func proxy(ctx context.Context, clientConn net.Conn, opt *Options) {
 		if err != nil && strings.Contains(err.Error(), errNetClosing) {
 			err = nil
 		}
-		logProxy := LogProxy{
-			ID:        id.String(),
-			DestAddr:  clientConn.RemoteAddr().String(),
-			ProxyAddr: upstreamConn.LocalAddr().String(),
-			SrcAddr:   upstreamConn.RemoteAddr().String(),
-			Bytes:     n,
-			Duration:  time.Now().Sub(start).Seconds(),
-			Error:     err,
+		l := &LogDisconnect{
+			ID:           id.String(),
+			ClientAddr:   clientConn.RemoteAddr().String(),
+			ProxyAddr:    upstreamConn.LocalAddr().String(),
+			UpstreamAddr: upstreamConn.RemoteAddr().String(),
+			Bytes:        n,
+			Duration:     time.Now().Sub(start).Seconds(),
+			Error:        err,
+			Src:          upstreamStr,
+			Dest:         clientStr,
 		}
-		logProxy.Print()
+		l.Print()
 		upstreamCh <- struct{}{}
 	}()
+
 	select {
 	case <-upstreamCh:
 	case <-clientCh:
 	}
 	return
+}
+
+func printStatus() {
+	ticker := time.NewTicker(PrintStatusInterval)
+	for range ticker.C {
+		dashboard.Print()
+	}
 }
